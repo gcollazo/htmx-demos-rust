@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+
+{% block content%}
+<h1>Counter</h1>
+
+<form>
+  <button hx-post="/counter/dec" hx-target="#count">-</button>
+  <span id="count">{{ count }}</span>
+  <button hx-post="/counter/inc" hx-target="#count">+</button>
+</form>
+{% endblock content%}

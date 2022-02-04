@@ -1,28 +1,68 @@
-use axum::{http::StatusCode, response::Html, response::IntoResponse, routing::get, Router};
+use std::sync::{Arc, Mutex};
 
-use std::net::SocketAddr;
+use askama::Template;
+use rouille::router;
+use rouille::Response;
 
-#[tokio::main]
-async fn main() {
-    // initialize tracing
-    tracing_subscriber::fmt::init();
-
-    // build our application with a route
-    let app = Router::new()
-        // `GET /` goes to `root`
-        .route("/", get(root));
-
-    // run our app with hyper
-    // `axum::Server` is a re-export of `hyper::Server`
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
-    tracing::debug!("listening on {}", addr);
-    axum::Server::bind(&addr)
-        .serve(app.into_make_service())
-        .await
-        .unwrap();
+#[derive(Template)]
+#[template(path = "base.html")]
+struct BaseTemplate<'a> {
+    title: &'a str,
 }
 
-// basic handler that responds with a static string
-async fn root() -> impl IntoResponse {
-    (StatusCode::OK, Html("<html><h1>Hello World</h1></html>"))
+#[derive(Template)]
+#[template(path = "home.html")]
+struct HomeTemplate<'a> {
+    _parent: BaseTemplate<'a>,
+}
+
+#[derive(Template)]
+#[template(path = "counter.html")]
+struct CounterTemplate<'a> {
+    count: i32,
+    _parent: BaseTemplate<'a>,
+}
+
+fn main() {
+    let counter = Arc::new(Mutex::new(0));
+    let cloned = Arc::clone(&counter);
+
+    rouille::start_server("127.0.0.1:3000", move |request| {
+        router!(request,
+            (GET) (/) => {
+                let t = HomeTemplate {
+                    _parent: BaseTemplate {
+                        title: "HTMX Examples",
+                    },
+                };
+
+                Response::html(t.render().unwrap())
+            },
+
+            (GET) (/counter) => {
+                let t = CounterTemplate {
+                    count: *cloned.lock().unwrap(),
+                    _parent: BaseTemplate {
+                        title: "Counter - HTMX Examples",
+                    },
+                };
+
+                Response::html(t.render().unwrap())
+            },
+
+            (POST) (/counter/{action: String}) => {
+                let mut count = cloned.lock().unwrap();
+
+                if action == "dec" {
+                    *count -=1;
+                } else if action == "inc" {
+                    *count +=1;
+                }
+
+                Response::text(format!("{}", *count))
+            },
+
+            _ => Response::empty_404()
+        )
+    });
 }
